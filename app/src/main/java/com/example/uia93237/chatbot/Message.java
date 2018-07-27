@@ -1,17 +1,27 @@
 package com.example.uia93237.chatbot;
 
+import java.util.Date;
+
+
 public class Message {
+
+    /*
+    Bean class that gets stored on Firebase Real-Time DB and represents a message sent in the chat room by either the bot or the user
+     */
 
     private String msgText;
     private String msgUser;
+    private long timestamp;
 
     public Message(String msgText, String msgUser) {
         this.msgText = msgText;
         this.msgUser = msgUser;
+        this.timestamp = new Date().getTime();
     }
 
-    public Message() {
-
+    // No-arg constructor needed for Firebase
+    public Message(){
+        this.timestamp = new Date().getTime();
     }
 
     public String getMsgText() {
@@ -29,4 +39,8 @@ public class Message {
     public void setMsgUser(String msgUser) {
         this.msgUser = msgUser;
     }
+
+    public long getTimestamp() { return timestamp; }
+
+    public void setTimestamp(long timestamp) { this.timestamp = timestamp; }
 }

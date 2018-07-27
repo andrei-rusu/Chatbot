@@ -2,10 +2,10 @@ package com.example.uia93237.chatbot;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.media.MediaPlayer;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
@@ -31,14 +31,21 @@ import com.firebase.ui.database.FirebaseRecyclerAdapter;
 import com.firebase.ui.database.FirebaseRecyclerOptions;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.Query;
+import com.google.firebase.database.ValueEventListener;
 
 
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import ai.api.AIDataService;
 import ai.api.AIListener;
@@ -54,9 +61,16 @@ import ai.api.model.Result;
 
 public class MainActivity extends AppCompatActivity implements AIListener {
 
-    private final static String accessToken = "aa61d172c55d430c8c958e2312e1658c";
-    private final static String botName = "Anastasia";
+
+    // Identifier of the chat instance on the Firebase DB - obtained through UUID
+    private static String uniqueID = null;
+    private static final String PREF_UNIQUE_ID = "PREF_UNIQUE_ID";
+
+    private final static String accessToken = "f71f8955cc7a4003995542bb46f4f9e4"; // Connecting to a specific Google Dialogflow Agent
+
+    private final static String botName = "Agnes";
     private final static String userName = "User";
+
     private final static int PERMISSION_CODE = 1;
 
     private EditText editText;
@@ -83,7 +97,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         super.onCreate(savedInstanceState);
 
-        // Request Audio Permission
+        // Request  Record Audio and Location Permission
         ActivityCompat.requestPermissions(this, new String[] { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.RECORD_AUDIO }, PERMISSION_CODE);
 
         // Set up view
@@ -109,7 +123,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         // Set up Firebase
         ref = FirebaseDatabase.getInstance().getReference();
         ref.keepSynced(true);
-
+        setupDBCleanupListener();
 
         // Set up Dialogflow
         final AIConfiguration config = new AIConfiguration(accessToken, AIConfiguration.SupportedLanguages.English,
@@ -122,17 +136,17 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         // Inititialize request to DialogFlow
         final AIRequest aiRequest = new AIRequest();
-        // Set location related context
+        // Set location to the weather related context
+        final AIContext weather = new AIContext("weather");
+
         FusedLocationProviderClient mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         try {
             mFusedLocationClient.getLastLocation().addOnSuccessListener((location) -> {
                 if (location != null) {
-                    AIContext currentLoc = new AIContext("weather");
                     Map<String, String> locMap = new HashMap<>();
                     locMap.put("latitude", String.valueOf(location.getLatitude()));
                     locMap.put("longitude", String.valueOf(location.getLongitude()));
-                    currentLoc.setParameters(locMap);
-                    aiRequest.setContexts(Collections.singletonList(currentLoc));
+                    weather.setParameters(locMap);
                 }
             });
         } catch(SecurityException e) {
@@ -149,15 +163,16 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             if (!message.equals("")) {
 
                 Message chatMessage = new Message(message, userName);
-                ref.child("chat").push().setValue(chatMessage);
+                ref.child(id(this)).push().setValue(chatMessage);
 
+                aiRequest.setContexts(Collections.singletonList(weather));
                 aiRequest.setQuery(message);
 
                 new QueryTask().execute(aiRequest);
 
             }
             else { // the else block takes care of voice input
-                aiService.startListening();
+                aiService.startListening(Collections.singletonList(weather));
             }
 
             editText.setText("");
@@ -193,7 +208,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         // Create Adapter
         FirebaseRecyclerOptions<Message> options =
                 new FirebaseRecyclerOptions.Builder<Message>()
-                        .setQuery(ref.child("chat"), Message.class)
+                        .setQuery(ref.child(id(this)), Message.class)
                         .build();
 
         adapter = new FirebaseRecyclerAdapter<Message, ChatViewHolder>(options){
@@ -244,7 +259,6 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         });
 
         recyclerView.setAdapter(adapter);
-
         adapter.startListening();
     }
 
@@ -257,12 +271,34 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         // set text bubble for bot
         Message chatMessageBot = new Message(reply, botName);
-        ref.child("chat").push().setValue(chatMessageBot);
+        ref.child(id(this)).push().setValue(chatMessageBot);
 
         // TTS
-        tts.speak(reply, TextToSpeech.QUEUE_ADD, null, null);
+        tts.speak(sanitizeForTts(reply), TextToSpeech.QUEUE_ADD, null, null);
 
     }
+
+    // make string ready for TTS
+    private String sanitizeForTts(String s) {
+        return s.substring(0, s.length() - 2).replace("/[\u2190-\u21FF]|[\u2600-\u26FF]|[\u2700-\u27BF]|[\u3000-\u303F]|[\u1F300-\u1F64F]|[\u1F680-\u1F6FF]|'\uDC81'/g", "");
+    }
+
+    public static synchronized String id(Context context) {
+
+        if (uniqueID == null) {
+            SharedPreferences sharedPrefs = context.getSharedPreferences(
+                    PREF_UNIQUE_ID, Context.MODE_PRIVATE);
+            uniqueID = sharedPrefs.getString(PREF_UNIQUE_ID, null);
+            if (uniqueID == null) {
+                uniqueID = UUID.randomUUID().toString();
+                SharedPreferences.Editor editor = sharedPrefs.edit();
+                editor.putString(PREF_UNIQUE_ID, uniqueID);
+                editor.apply();
+            }
+        }
+        return uniqueID;
+    }
+
 
 
     /*
@@ -275,7 +311,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         // set the text bubble for the user query
         String message = response.getResult().getResolvedQuery();
         Message chatMessageUser = new Message(message, userName);
-        ref.child("chat").push().setValue(chatMessageUser);
+        ref.child(id(this)).push().setValue(chatMessageUser);
 
         // handle the response, including the creation of the text bubble for the bot
         handleResponse(response);
@@ -382,6 +418,26 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     }
 
 
+    // Listener which cleans-up database entries older than 1 day
+    private void setupDBCleanupListener() {
+        long cutoff = new Date().getTime() - TimeUnit.MILLISECONDS.convert(1, TimeUnit.DAYS);
+        Query oldItems = ref.child(id(this)).orderByChild("timestamp").endAt(cutoff);
+        oldItems.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                for (DataSnapshot itemSnapshot: snapshot.getChildren()) {
+                    itemSnapshot.getRef().removeValue();
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+                throw databaseError.toException();
+            }
+        });
+    }
+
+
     // Cleanup Resources
     @Override
     public void onDestroy() {
@@ -416,7 +472,6 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         @Override
         protected void onPostExecute(AIResponse response) {
             if (response != null) {
-
                 handleResponse(response);
             }
         }
