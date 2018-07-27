@@ -89,7 +89,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
 
     // boolean used to switch between the 2 pictograms in the fab button
-    boolean flagFab = true;
+    private boolean flagFab = true;
 
 
     @Override
@@ -278,7 +278,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
     }
 
-    // make string ready for TTS
+    // make string ready for TTS by removing emojis and the last character
     private String sanitizeForTts(String s) {
         return s.substring(0, s.length() - 2).replace("/[\u2190-\u21FF]|[\u2600-\u26FF]|[\u2700-\u27BF]|[\u3000-\u303F]|[\u1F300-\u1F64F]|[\u1F680-\u1F6FF]|'\uDC81'/g", "");
     }
@@ -446,6 +446,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         aiService.stopListening();
         tts.stop();
         adapter.stopListening();
+
     }
 
 
