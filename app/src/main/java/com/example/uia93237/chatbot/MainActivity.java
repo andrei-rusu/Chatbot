@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.support.annotation.NonNull;
@@ -47,16 +48,18 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import ai.api.AIDataService;
 import ai.api.AIListener;
 import ai.api.AIServiceException;
+import ai.api.RequestExtras;
 import ai.api.android.AIConfiguration;
+import ai.api.android.AIDataService;
 import ai.api.android.AIService;
 import ai.api.model.AIContext;
 import ai.api.model.AIError;
 import ai.api.model.AIRequest;
 import ai.api.model.AIResponse;
 import ai.api.model.Result;
+
 
 
 public class MainActivity extends AppCompatActivity implements AIListener {
@@ -113,7 +116,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         recyclerView.setLayoutManager(linearLayoutManager);
 
         // Set up TTS
-        tts = new TextToSpeech(getApplicationContext(), (status) -> {
+        tts = new TextToSpeech(this, (status) -> {
             if(status == TextToSpeech.SUCCESS) {
                 tts.setLanguage(Locale.UK);
             }
@@ -126,18 +129,20 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         setupDBCleanupListener();
 
         // Set up Dialogflow
-        final AIConfiguration config = new AIConfiguration(accessToken, AIConfiguration.SupportedLanguages.English,
-                AIConfiguration.RecognitionEngine.System);
+        final AIConfiguration config =
+                new AIConfiguration(accessToken, AIConfiguration.SupportedLanguages.English, AIConfiguration.RecognitionEngine.System);
 
+        // Used for voice search
         aiService = AIService.getService(this, config);
         aiService.setListener(this);
 
-        aiDataService = new AIDataService(config);
+        // Used for text search
+        aiDataService = new AIDataService(this, config);
 
         // Inititialize request to DialogFlow
         final AIRequest aiRequest = new AIRequest();
         // Set location to the weather related context
-        final AIContext weather = new AIContext("weather");
+        final AIContext weatherCtx = new AIContext("weather");
 
         FusedLocationProviderClient mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         try {
@@ -146,7 +151,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
                     Map<String, String> locMap = new HashMap<>();
                     locMap.put("latitude", String.valueOf(location.getLatitude()));
                     locMap.put("longitude", String.valueOf(location.getLongitude()));
-                    weather.setParameters(locMap);
+                    weatherCtx.setParameters(locMap);
                 }
             });
         } catch(SecurityException e) {
@@ -160,19 +165,19 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
             String message = editText.getText().toString().trim();
 
+            RequestExtras requestExtras = new RequestExtras(Collections.singletonList(weatherCtx), null);
+
             if (!message.equals("")) {
 
                 Message chatMessage = new Message(message, userName);
                 ref.child(id(this)).push().setValue(chatMessage);
-
-                aiRequest.setContexts(Collections.singletonList(weather));
                 aiRequest.setQuery(message);
 
-                new QueryTask().execute(aiRequest);
+                new QueryTask(requestExtras).execute(aiRequest);
 
             }
             else { // the else block takes care of voice input
-                aiService.startListening(Collections.singletonList(weather));
+                aiService.startListening(requestExtras);
             }
 
             editText.setText("");
@@ -257,7 +262,6 @@ public class MainActivity extends AppCompatActivity implements AIListener {
                 }
             }
         });
-
         recyclerView.setAdapter(adapter);
         adapter.startListening();
     }
@@ -274,15 +278,36 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         ref.child(id(this)).push().setValue(chatMessageBot);
 
         // TTS
-        tts.speak(sanitizeForTts(reply), TextToSpeech.QUEUE_ADD, null, null);
+        tts.speak(sanitizeForTTS(reply), TextToSpeech.QUEUE_ADD, null, null);
 
     }
 
-    // make string ready for TTS by removing emojis and the last character
-    private String sanitizeForTts(String s) {
-        return s.substring(0, s.length() - 2).replace("/[\u2190-\u21FF]|[\u2600-\u26FF]|[\u2700-\u27BF]|[\u3000-\u303F]|[\u1F300-\u1F64F]|[\u1F680-\u1F6FF]|'\uDC81'/g", "");
+    // make string ready for TTS by removing emojis
+    private String sanitizeForTTS(String s) {
+
+        //Character.UnicodeScript.of () was not added till API 24 so this is a 24 up solution
+        if (Build.VERSION.SDK_INT > 23) {
+            // this is where we will store the reassembled string
+            StringBuilder result = new StringBuilder();
+            /*
+            we are going to cycle through the word checking each character
+            to find its unicode script to compare it against known alphabets
+              */
+            for (int i = 0; i < s.length(); i++) {
+                // currently emojis don't have a devoted unicode script so they return UNKNOWN
+                if (!Character.UnicodeScript.of(s.charAt(i)).toString().equals("UNKNOWN")) {
+                    result.append(s.charAt(i));
+                }
+            }
+
+            return result.toString();
+        }
+
+        // if API <= 23 the string cannot be sanitized properly
+        return s;
     }
 
+    // Method used to assign an ID per installation of App. This will uniquely identify a chat instance
     public static synchronized String id(Context context) {
 
         if (uniqueID == null) {
@@ -457,14 +482,18 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
     private class QueryTask extends AsyncTask<AIRequest,Void,AIResponse> {
 
-        private QueryTask() {}
+        private RequestExtras extras;
+
+        private QueryTask(RequestExtras extras) {
+            this.extras = extras;
+        }
 
         @Override
         protected AIResponse doInBackground(AIRequest... aiRequests) {
 
             final AIRequest req = aiRequests[0];
             try {
-                return aiDataService.request(req);
+                return aiDataService.request(req, extras);
             } catch (AIServiceException e) {
                 Log.d("EXCEPTION: ", e.getMessage());
             }
