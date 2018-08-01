@@ -1,7 +1,10 @@
 package com.example.uia93237.chatbot;
 
 import android.Manifest;
+import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -9,6 +12,7 @@ import android.graphics.BitmapFactory;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
@@ -40,13 +44,20 @@ import com.google.firebase.database.Query;
 import com.google.firebase.database.ValueEventListener;
 
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import ai.api.AIListener;
 import ai.api.AIServiceException;
@@ -58,6 +69,7 @@ import ai.api.model.AIContext;
 import ai.api.model.AIError;
 import ai.api.model.AIRequest;
 import ai.api.model.AIResponse;
+import ai.api.model.ResponseMessage;
 import ai.api.model.Result;
 
 
@@ -71,6 +83,11 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
     private final static String accessToken = "f71f8955cc7a4003995542bb46f4f9e4"; // Connecting to a specific Google Dialogflow Agent
 
+    private final static String[] permissions = new String[] {
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.RECORD_AUDIO
+    };
+
     private final static String botName = "Agnes";
     private final static String userName = "User";
 
@@ -78,6 +95,10 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
     private EditText editText;
 
+    // Dialog which prompts for internet connection
+    private Dialog dialog;
+
+    // TTS engine
     private TextToSpeech tts;
 
     // Firebase DB
@@ -100,8 +121,8 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         super.onCreate(savedInstanceState);
 
-        // Request  Record Audio and Location Permission
-        ActivityCompat.requestPermissions(this, new String[] { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.RECORD_AUDIO }, PERMISSION_CODE);
+        // Request: Record Audio and Location Permission
+        checkPermissions();
 
         // Set up view
         setContentView(R.layout.activity_main);
@@ -267,20 +288,60 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     }
 
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        internetCheckOrClose();
+    }
+
     // handles the response coming back from the Google Dialogflow engine after being analysed
     private void handleResponse(AIResponse response) {
 
+        boolean usedTTS = false;
+        StringBuilder fullReply = new StringBuilder();
+
         Result result = response.getResult();
-        String reply = result.getFulfillment().getSpeech();
+        List<ResponseMessage> messages = result.getFulfillment().getMessages();
+
+        for (ResponseMessage message : messages) {
+
+            if (message instanceof ResponseMessage.ResponseSpeech) {
+
+                String reply = ((ResponseMessage.ResponseSpeech) message).getSpeech().get(0);
+                fullReply.append('\n').append(reply);
+
+                // TTS
+                if (!usedTTS) {
+                    tts.speak(sanitizeForTTS(reply), TextToSpeech.QUEUE_ADD, null, null);
+                    usedTTS = true;
+                }
+
+            }
+        }
+        fullReply.deleteCharAt(0);
 
         // set text bubble for bot
-        Message chatMessageBot = new Message(reply, botName);
+        Message chatMessageBot = new Message(fullReply.toString(), botName);
         ref.child(id(this)).push().setValue(chatMessageBot);
+    }
 
-        // TTS
-        tts.speak(sanitizeForTTS(reply), TextToSpeech.QUEUE_ADD, null, null);
+    /*
+    Utility methods
+     */
+
+    // Requests permissions if not already granted
+    private void checkPermissions() {
+
+        for (String perm : permissions) {
+
+            int grant = this.checkCallingOrSelfPermission(perm);
+            if (! (grant == PackageManager.PERMISSION_GRANTED)) {
+                ActivityCompat.requestPermissions(this, new String[]{perm}, PERMISSION_CODE);
+            }
+        }
 
     }
+
 
     // make string ready for TTS by removing emojis
     private String sanitizeForTTS(String s) {
@@ -307,8 +368,9 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         return s;
     }
 
+
     // Method used to assign an ID per installation of App. This will uniquely identify a chat instance
-    public static synchronized String id(Context context) {
+    private synchronized String id(Context context) {
 
         if (uniqueID == null) {
             SharedPreferences sharedPrefs = context.getSharedPreferences(
@@ -324,6 +386,49 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         return uniqueID;
     }
 
+    private void internetCheckOrClose() {
+
+        if (!isInternetAvailable()) {
+            showConnectionDialog();
+        }
+    }
+
+    // Pings google.com to check for internet connection
+    private boolean isInternetAvailable() {
+        InetAddress inetAddress = null;
+        try {
+            Future<InetAddress> future = Executors.newSingleThreadExecutor().submit(() -> {
+                try {
+                    return InetAddress.getByName("google.com");
+                } catch (UnknownHostException e) {
+                    return null;
+                }
+            });
+
+            inetAddress = future.get(3, TimeUnit.SECONDS);
+            future.cancel(true);
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            Log.d("CONNECTION PROBLEM: ", "Internet not available!");
+        }
+
+        return inetAddress != null && !inetAddress.toString().equals("");
+    }
+
+    // Shows dialog which prompts user to enable internet connection
+    private void showConnectionDialog() {
+        if (dialog == null) {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setMessage("Agnes needs Internet Connection!")
+                    .setCancelable(false)
+                    .setPositiveButton("Connect to Internet", (dialog, id) -> startActivity(new Intent(Settings.ACTION_WIRELESS_SETTINGS)))
+                    .setNegativeButton("Quit", (dialog, id) -> this.finish());
+
+            dialog = builder.show();
+        }
+        else if (!dialog.isShowing()) {
+            dialog.show();
+        }
+    }
 
 
     /*
