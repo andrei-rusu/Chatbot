@@ -189,21 +189,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         // Inititialize request to DialogFlow
         final AIRequest aiRequest = new AIRequest();
-
-
-//TODO
-//        try {
-//            mFusedLocationClient.getLastLocation().addOnSuccessListener((location) -> {
-//                if (location != null) {
-//                    Map<String, String> locMap = new HashMap<>();
-//                    locMap.put("latitude", String.valueOf(location.getLatitude()));
-//                    locMap.put("longitude", String.valueOf(location.getLongitude()));
-//                    locationCtx.setParameters(locMap);
-//                }
-//            });
-//        } catch(SecurityException e) {
-//            Log.d("EXCEPTION: ", e.getMessage());
-//        }
+        
 
         // Set up send message button listener
         addBtn.setOnClickListener(view -> {
