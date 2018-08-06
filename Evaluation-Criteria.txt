@@ -1,0 +1,56 @@
+1. Pricing:
+- Free plan:
++ unlimited text queries, but 180 / minute
++ 15000 voice req / mnth ; 1000 / day; 100/minute
+- Pay-as-you-go enterprise plan:
++ 600 text req / minute
++ 100 k voice req / day; 300 req / minute
++ $0.002 per text request ; $0.0065 per 15 seconds of audio
+
+2. Supported OS + Mobile Integration : Android + iOS SDK https://github.com/dialogflow
+Google Cloud Functions Node.JS webhook fulfillment
+
+3. Supported languages: Around 31 locales supported (including english, german, chinese, french, dutch, spanish etc
+max 15 locales / agent (can use multiple agents if more are needed)
+https://dialogflow.com/docs/reference/language
+
+4. Prebuilt Intents:
+Dialogflow has prebuilt agents that are trained to understand a large number of queries, like Weather, Traffic, E-commerce, Ccy Exchange, Hotel bookings etc.
+The intents from these prebuilt agents are very easy to migrate to other agents
+
+5. Fulfillment:
+Through WebHooks: Processed requests can be forwarded to either your own web service or to a Google Cloud Functions integration (Node.JS)
+If second option is chosen, the function handlers can be configured directly from Dialogflow portal (quick and easy)
+
+6. Performance:
+Under 1s for simple text request
+Aprox 2-3s for simple voice request
+Aprox 3s for current location voice request -> dependent on internet speed + google maps service
+Under 1s for current location text request -> dependent on internet speed + google maps service
+Aprox 2s for current weather text request -> dependent on internet speed + openweather service
+Aprox 3-4s for weather forecast text request -> dependent on internet speed + openweather service
+Aprox 3-5s for weather forecast voice request -> dependent on internet speed + openweather service
+
+7. Training phrases: Generally a few for pretty good confidence levels
+Around 20 for simple requests
+Around 100 for weather or current location requests
+
+8. Known limitations:
+No limitations are known so far apart from the requests quotas
+
+9. Unique features:
+- Small talk: 
+No extra training or intents needed for the agent to be able to reply to several conversational queries like 
+"Who are you?" "You're annoying" "Who's your boss" "You're amazing" "You are smart" "Will you marry me?" etc.
+- Knowledge Base: The agent can be fed with up to 10MB / request of files containing FAQs or articles from which the agent can answer questions
+- Quick integrations with Google Cloud Functions (NodeJS) and Google Cloud TTS 
+(still in beta: although the JSON response contains the audio file represented as a binary object, currently this cannot be rendered in Android)
+
+10. Ease of testing:
+Dialogflow has unlimited text queries in its free plan and a readily available web integration for the agent (no need to open the phone app to actually test the agent)
+For Google Cloud Functions fulfillments, the Google Firebase Console provides readable logs for debugging.
+These features make debugging very easy and straightforward in Dialogflow.
+
+11. Ease of maintainance post integration:
+Although the Google Cloud console is very user friendly and easy to pick-up, offering comprehensive logs and debugging tools, 
+maintaining the Agent would still have to be done from an entirely different console to the AWS one
