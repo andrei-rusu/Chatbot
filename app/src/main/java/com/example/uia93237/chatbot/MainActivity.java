@@ -9,6 +9,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.location.Location;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
@@ -35,6 +36,9 @@ import android.widget.Toast;
 import com.firebase.ui.database.FirebaseRecyclerAdapter;
 import com.firebase.ui.database.FirebaseRecyclerOptions;
 import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
@@ -111,10 +115,18 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     private AIService aiService;
     private AIDataService aiDataService;
 
+    // Location related instances
+    private FusedLocationProviderClient mFusedLocationClient;
+    private LocationCallback mLocationCallback;
+    private Map<String, String> locationMap;
 
     // boolean used to switch between the 2 pictograms in the fab button
     private boolean flagFab = true;
 
+
+    /*
+    Main Activity methods
+     */
 
     @Override
     protected void onCreate(Bundle savedInstanceState){
@@ -144,6 +156,21 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         });
 
 
+        // Set up location related instances
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        locationMap = new HashMap<>();
+        mLocationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+                if (locationResult != null) {
+                    Location location = locationResult.getLastLocation();
+                    locationMap.put("latitude", String.valueOf(location.getLatitude()));
+                    locationMap.put("longitude", String.valueOf(location.getLongitude()));
+                }
+            }
+        };
+
+
         // Set up Firebase
         ref = FirebaseDatabase.getInstance().getReference();
         ref.keepSynced(true);
@@ -162,31 +189,34 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         // Inititialize request to DialogFlow
         final AIRequest aiRequest = new AIRequest();
-        // Set location to the weather related context
-        final AIContext weatherCtx = new AIContext("weather");
 
-        FusedLocationProviderClient mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
-        try {
-            mFusedLocationClient.getLastLocation().addOnSuccessListener((location) -> {
-                if (location != null) {
-                    Map<String, String> locMap = new HashMap<>();
-                    locMap.put("latitude", String.valueOf(location.getLatitude()));
-                    locMap.put("longitude", String.valueOf(location.getLongitude()));
-                    weatherCtx.setParameters(locMap);
-                }
-            });
-        } catch(SecurityException e) {
-            Log.d("EXCEPTION: ", e.getMessage());
-        }
+
+//TODO
+//        try {
+//            mFusedLocationClient.getLastLocation().addOnSuccessListener((location) -> {
+//                if (location != null) {
+//                    Map<String, String> locMap = new HashMap<>();
+//                    locMap.put("latitude", String.valueOf(location.getLatitude()));
+//                    locMap.put("longitude", String.valueOf(location.getLongitude()));
+//                    locationCtx.setParameters(locMap);
+//                }
+//            });
+//        } catch(SecurityException e) {
+//            Log.d("EXCEPTION: ", e.getMessage());
+//        }
 
         // Set up send message button listener
         addBtn.setOnClickListener(view -> {
 
             view.playSoundEffect(android.view.SoundEffectConstants.CLICK);
 
+            // Get message from the editor
             String message = editText.getText().toString().trim();
 
-            RequestExtras requestExtras = new RequestExtras(Collections.singletonList(weatherCtx), null);
+            // Set location related context and request extras
+            AIContext locationCtx = new AIContext("location");
+            locationCtx.setParameters(locationMap);
+            RequestExtras requestExtras = new RequestExtras(Collections.singletonList(locationCtx), null);
 
             if (!message.equals("")) {
 
@@ -292,7 +322,31 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     protected void onResume() {
         super.onResume();
         internetCheckOrClose();
+        startLocationUpdates();
     }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        stopLocationUpdates();
+    }
+
+    // Cleanup Resources
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+
+        aiService.stopListening();
+        tts.stop();
+        adapter.stopListening();
+
+    }
+
+
+    /*
+    Secondary methods
+     */
+
 
     // handles the response coming back from the Google Dialogflow engine after being analysed
     private void handleResponse(AIResponse response) {
@@ -386,6 +440,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         return uniqueID;
     }
 
+    // Shows required connection dialog if the internet is unavailable
     private void internetCheckOrClose() {
 
         if (!isInternetAvailable()) {
@@ -429,6 +484,24 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             dialog.show();
         }
     }
+
+    // Requests location updates from the FusedLocationClient
+    private void startLocationUpdates() {
+
+        try {
+            mFusedLocationClient.requestLocationUpdates(LocationRequest.create(), mLocationCallback, null);
+        } catch (SecurityException e) {
+            Log.d("LOCATION UNAVAILABLE: ", "Location service is not available!");
+        }
+    }
+
+    // Stops the location updates
+    private void stopLocationUpdates() {
+
+        mFusedLocationClient.removeLocationUpdates(mLocationCallback);
+    }
+
+
 
 
     /*
@@ -565,18 +638,6 @@ public class MainActivity extends AppCompatActivity implements AIListener {
                 throw databaseError.toException();
             }
         });
-    }
-
-
-    // Cleanup Resources
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-
-        aiService.stopListening();
-        tts.stop();
-        adapter.stopListening();
-
     }
 
 
