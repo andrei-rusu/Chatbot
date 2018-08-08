@@ -307,6 +307,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     @Override
     protected void onResume() {
         super.onResume();
+
         internetCheckOrClose();
         startLocationUpdates();
     }
@@ -314,6 +315,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     @Override
     protected void onPause() {
         super.onPause();
+
         stopLocationUpdates();
     }
 
@@ -498,8 +500,9 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     public void onResult(AIResponse response) {
 
         // set the text bubble for the user query
-        String message = response.getResult().getResolvedQuery();
-        Message chatMessageUser = new Message(message, userName);
+        String rawMessage = response.getResult().getResolvedQuery();
+        String capitalisedMessage = rawMessage.substring(0, 1).toUpperCase() + rawMessage.substring(1);
+        Message chatMessageUser = new Message(capitalisedMessage, userName);
         ref.child(id(this)).push().setValue(chatMessageUser);
 
         // handle the response, including the creation of the text bubble for the bot
