@@ -654,7 +654,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             }
             return null;
         }
-        
+
         @Override
         protected void onPostExecute(AIResponse response) {
             if (response != null) {
