@@ -45,6 +45,7 @@ No extra training or intents needed for the agent to be able to reply to several
 - Knowledge Base: The agent can be fed with up to 10MB / request of files containing FAQs or articles from which the agent can answer questions
 - Quick integrations with Google Cloud Functions (NodeJS) and Google Cloud TTS 
 (still in beta: although the JSON response contains the audio file represented as a binary object, currently this cannot be rendered in Android)
+- Beta: Dialogflow Phone Gateway -> Configure agent to answer you over a phone number!
 
 10. Ease of testing:
 Dialogflow has unlimited text queries in its free plan and a readily available web integration for the agent (no need to open the phone app to actually test the agent)
