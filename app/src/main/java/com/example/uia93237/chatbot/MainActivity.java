@@ -53,7 +53,7 @@ import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.List;
+
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -73,8 +73,6 @@ import ai.api.model.AIContext;
 import ai.api.model.AIError;
 import ai.api.model.AIRequest;
 import ai.api.model.AIResponse;
-import ai.api.model.ResponseMessage;
-import ai.api.model.Result;
 
 
 
@@ -136,45 +134,67 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         // Request: Record Audio and Location Permission
         checkPermissions();
 
-        // Set up view
-        setContentView(R.layout.activity_main);
+        // Set up Firebase
+        initFirebase();
 
-        RecyclerView recyclerView = findViewById(R.id.recyclerView);
-        editText = findViewById(R.id.editText);
-        RelativeLayout addBtn = findViewById(R.id.addBtn);
-
-        recyclerView.setHasFixedSize(true);
-        final LinearLayoutManager linearLayoutManager=new LinearLayoutManager(this);
-        linearLayoutManager.setStackFromEnd(true);
-        recyclerView.setLayoutManager(linearLayoutManager);
+        // Set up view elements
+        initUIElements();
 
         // Set up TTS
-        tts = new TextToSpeech(this, (status) -> {
-            if(status == TextToSpeech.SUCCESS) {
-                tts.setLanguage(Locale.UK);
-            }
-        });
-
+        initTTS();
 
         // Set up location related instances
-        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
-        locationMap = new HashMap<>();
-        mLocationCallback = new LocationCallback() {
-            @Override
-            public void onLocationResult(LocationResult locationResult) {
-                if (locationResult != null) {
-                    Location location = locationResult.getLastLocation();
-                    locationMap.put("latitude", String.valueOf(location.getLatitude()));
-                    locationMap.put("longitude", String.valueOf(location.getLongitude()));
-                }
-            }
-        };
+        initLocationServices();
+
+        // Set up Dialogflow service
+        initDialogflowService();
+
+        // Set up UI listeners
+        initUIListeners();
+
+    }
 
 
-        // Set up Firebase
-        ref = FirebaseDatabase.getInstance().getReference();
-        ref.keepSynced(true);
-        setupDBCleanupListener();
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        internetCheckOrClose();
+        startLocationUpdates();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+
+        stopLocationUpdates();
+    }
+
+    // Cleanup Resources
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+
+        aiService.stopListening();
+        tts.stop();
+        adapter.stopListening();
+    }
+
+
+    /*
+    Init methods
+     */
+
+    public void initUIElements() {
+
+        setContentView(R.layout.activity_main);
+        editText = findViewById(R.id.editText);
+
+        //Configure FirebaseRecyclerAdapter -> FirebaseUI
+        initFirebaseRecyclerAdapter();
+    }
+
+    public void initDialogflowService() {
 
         // Set up Dialogflow
         final AIConfiguration config =
@@ -186,12 +206,11 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         // Used for text search
         aiDataService = new AIDataService(this, config);
+    }
 
-        // Inititialize request to DialogFlow
-        final AIRequest aiRequest = new AIRequest();
-        
+    public void initUIListeners() {
 
-        // Set up send message button listener
+        RelativeLayout addBtn = findViewById(R.id.addBtn);
         addBtn.setOnClickListener(view -> {
 
             view.playSoundEffect(android.view.SoundEffectConstants.CLICK);
@@ -208,10 +227,12 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
                 Message chatMessage = new Message(message, userName);
                 ref.child(id(this)).push().setValue(chatMessage);
+
+                // Inititialize request to DialogFlow
+                final AIRequest aiRequest = new AIRequest();
                 aiRequest.setQuery(message);
 
                 new QueryTask(requestExtras).execute(aiRequest);
-
             }
             else { // the else block takes care of voice input
                 aiService.startListening(requestExtras);
@@ -241,13 +262,44 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
             @Override public void afterTextChanged(Editable s) {}
         });
+    }
 
+    public void initTTS() {
 
-        /*
-         Configure FirebaseRecyclerAdapter -> FirebaseUI
-          */
+        tts = new TextToSpeech(this, (status) -> {
+            if(status == TextToSpeech.SUCCESS) {
+                tts.setLanguage(Locale.UK);
+            }
+        });
+    }
 
-        // Create Adapter
+    public void initLocationServices() {
+
+        // Set up location related instances
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        locationMap = new HashMap<>();
+        mLocationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+                if (locationResult != null) {
+                    Location location = locationResult.getLastLocation();
+                    locationMap.put("latitude", String.valueOf(location.getLatitude()));
+                    locationMap.put("longitude", String.valueOf(location.getLongitude()));
+                }
+            }
+        };
+    }
+
+    public void initFirebase() {
+
+        ref = FirebaseDatabase.getInstance().getReference();
+        ref.keepSynced(true);
+        setupDBCleanupListener();
+    }
+
+    public void initFirebaseRecyclerAdapter() {
+
+        // Set up the adapter
         FirebaseRecyclerOptions<Message> options =
                 new FirebaseRecyclerOptions.Builder<Message>()
                         .setQuery(ref.child(id(this)), Message.class)
@@ -284,8 +336,13 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             }
         };
 
+        // Register the Adapter with the recyclerView
+        RecyclerView recyclerView = findViewById(R.id.recyclerView);
+        recyclerView.setHasFixedSize(true);
+        final LinearLayoutManager linearLayoutManager = new LinearLayoutManager(this);
+        linearLayoutManager.setStackFromEnd(true);
+        recyclerView.setLayoutManager(linearLayoutManager);
 
-        // Register the Adapter
         adapter.registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
             @Override public void onItemRangeInserted(int positionStart, int itemCount) {
                 super.onItemRangeInserted(positionStart, itemCount);
@@ -299,77 +356,30 @@ public class MainActivity extends AppCompatActivity implements AIListener {
                 }
             }
         });
+
+        // Set the adapter for the recyclerView and start the events listening
         recyclerView.setAdapter(adapter);
         adapter.startListening();
     }
 
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-
-        internetCheckOrClose();
-        startLocationUpdates();
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-
-        stopLocationUpdates();
-    }
-
-    // Cleanup Resources
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-
-        aiService.stopListening();
-        tts.stop();
-        adapter.stopListening();
-
-    }
-
-
-    /*
-    Secondary methods
-     */
-
-
-    // handles the response coming back from the Google Dialogflow engine after being analysed
-    private void handleResponse(AIResponse response) {
-
-        boolean usedTTS = false;
-        StringBuilder fullReply = new StringBuilder();
-
-        Result result = response.getResult();
-        List<ResponseMessage> messages = result.getFulfillment().getMessages();
-
-        for (ResponseMessage message : messages) {
-
-            if (message instanceof ResponseMessage.ResponseSpeech) {
-
-                String reply = ((ResponseMessage.ResponseSpeech) message).getSpeech().get(0);
-                fullReply.append('\n').append(reply);
-
-                // TTS
-                if (!usedTTS) {
-                    tts.speak(sanitizeForTTS(reply), TextToSpeech.QUEUE_ADD, null, null);
-                    usedTTS = true;
-                }
-
-            }
-        }
-        fullReply.deleteCharAt(0);
-
-        // set text bubble for bot
-        Message chatMessageBot = new Message(fullReply.toString(), botName);
-        ref.child(id(this)).push().setValue(chatMessageBot);
-    }
 
     /*
     Utility methods
      */
+
+    // handles the response coming back from the Google Dialogflow engine after being analysed
+    private void handleResponse(AIResponse response) {
+
+        String reply = response.getResult().getFulfillment().getSpeech();
+
+        // Use TTS service to render the text response in audio
+        tts.speak(prepareForTTS(reply), TextToSpeech.QUEUE_ADD, null, null);
+
+        // Set text bubble for the Bot chat participant
+        Message chatMessageBot = new Message(reply, botName);
+        ref.child(id(this)).push().setValue(chatMessageBot);
+    }
 
     // Requests permissions if not already granted
     private void checkPermissions() {
@@ -384,48 +394,42 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
     }
 
-
-    // make string ready for TTS by removing emojis
-    private String sanitizeForTTS(String s) {
-
-        //Character.UnicodeScript.of () was not added till API 24 so this is a 24 up solution
-        if (Build.VERSION.SDK_INT > 23) {
-            // this is where we will store the reassembled string
-            StringBuilder result = new StringBuilder();
-            /*
-            we are going to cycle through the word checking each character
-            to find its unicode script to compare it against known alphabets
-              */
-            for (int i = 0; i < s.length(); i++) {
-                // currently emojis don't have a devoted unicode script so they return UNKNOWN
-                if (!Character.UnicodeScript.of(s.charAt(i)).toString().equals("UNKNOWN")) {
-                    result.append(s.charAt(i));
-                }
+    // Method used to change the fab button pictograms with animation
+    private static void imageViewAnimatedChange(Context c,
+                                                final ImageView v, final Bitmap new_image) {
+        final Animation anim_out = AnimationUtils.loadAnimation(c,
+                android.R.anim.fade_out);
+        final Animation anim_in = AnimationUtils.loadAnimation(c,
+                android.R.anim.fade_in);
+        anim_out.setAnimationListener(new Animation.AnimationListener() {
+            @Override
+            public void onAnimationStart(Animation animation) {
             }
 
-            return result.toString();
-        }
-
-        // if API <= 23 the string cannot be sanitized properly
-        return s;
-    }
-
-
-    // Method used to assign an ID per installation of App. This will uniquely identify a chat instance
-    private synchronized String id(Context context) {
-
-        if (uniqueID == null) {
-            SharedPreferences sharedPrefs = context.getSharedPreferences(
-                    PREF_UNIQUE_ID, Context.MODE_PRIVATE);
-            uniqueID = sharedPrefs.getString(PREF_UNIQUE_ID, null);
-            if (uniqueID == null) {
-                uniqueID = UUID.randomUUID().toString();
-                SharedPreferences.Editor editor = sharedPrefs.edit();
-                editor.putString(PREF_UNIQUE_ID, uniqueID);
-                editor.apply();
+            @Override
+            public void onAnimationRepeat(Animation animation) {
             }
-        }
-        return uniqueID;
+
+            @Override
+            public void onAnimationEnd(Animation animation) {
+                v.setImageBitmap(new_image);
+                anim_in.setAnimationListener(new Animation.AnimationListener() {
+                    @Override
+                    public void onAnimationStart(Animation animation) {
+                    }
+
+                    @Override
+                    public void onAnimationRepeat(Animation animation) {
+                    }
+
+                    @Override
+                    public void onAnimationEnd(Animation animation) {
+                    }
+                });
+                v.startAnimation(anim_in);
+            }
+        });
+        v.startAnimation(anim_out);
     }
 
     // Shows required connection dialog if the internet is unavailable
@@ -451,7 +455,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             inetAddress = future.get(3, TimeUnit.SECONDS);
             future.cancel(true);
         } catch (InterruptedException | ExecutionException | TimeoutException e) {
-            Log.d("CONNECTION PROBLEM: ", "Internet not available!");
+            Log.d("CONNECTION PROBLEM", "Internet not available!");
         }
 
         return inetAddress != null && !inetAddress.toString().equals("");
@@ -479,7 +483,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         try {
             mFusedLocationClient.requestLocationUpdates(LocationRequest.create(), mLocationCallback, null);
         } catch (SecurityException e) {
-            Log.d("LOCATION UNAVAILABLE: ", "Location service is not available!");
+            Log.d("LOCATION UNAVAILABLE", "Location service is not available!");
         }
     }
 
@@ -489,6 +493,75 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         mFusedLocationClient.removeLocationUpdates(mLocationCallback);
     }
 
+    // Listener which cleans-up database entries older than 1 day
+    private void setupDBCleanupListener() {
+        long cutoff = new Date().getTime() - TimeUnit.MILLISECONDS.convert(1, TimeUnit.DAYS);
+        Query oldItems = ref.child(id(this)).orderByChild("timestamp").endAt(cutoff);
+        oldItems.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                for (DataSnapshot itemSnapshot: snapshot.getChildren()) {
+                    itemSnapshot.getRef().removeValue();
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+                throw databaseError.toException();
+            }
+        });
+    }
+
+
+    /*
+    Static utility methods
+     */
+
+    // make string ready for TTS by removing emojis
+    private static String prepareForTTS(String s) {
+
+        // TTS will only encode the first line of input
+        s = s.split("\\r?\\n")[0];
+
+        //Character.UnicodeScript.of () was not added till API 24 so this is a 24 up solution
+        if (Build.VERSION.SDK_INT > 23) {
+            // this is where we will store the reassembled string
+            StringBuilder result = new StringBuilder();
+            /*
+            we are going to cycle through the word checking each character
+            to find its unicode script to compare it against known alphabets
+              */
+            for (int i = 0; i < s.length(); i++) {
+                // currently emojis don't have a devoted unicode script so they return UNKNOWN
+                if (!Character.UnicodeScript.of(s.charAt(i)).toString().equals("UNKNOWN")) {
+                    result.append(s.charAt(i));
+                }
+            }
+
+            return result.toString();
+        }
+
+        // if API <= 23 emojis cannot be removed from the string
+        return s;
+    }
+
+
+    // Method used to assign an ID per installation of App. This will uniquely identify a chat instance
+    private static synchronized String id(Context context) {
+
+        if (uniqueID == null) {
+            SharedPreferences sharedPrefs = context.getSharedPreferences(
+                    PREF_UNIQUE_ID, Context.MODE_PRIVATE);
+            uniqueID = sharedPrefs.getString(PREF_UNIQUE_ID, null);
+            if (uniqueID == null) {
+                uniqueID = UUID.randomUUID().toString();
+                SharedPreferences.Editor editor = sharedPrefs.edit();
+                editor.putString(PREF_UNIQUE_ID, uniqueID);
+                editor.apply();
+            }
+        }
+        return uniqueID;
+    }
 
 
 
@@ -535,44 +608,6 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     }
 
 
-    // Method used to change the fab button pictograms with animation
-    private static void imageViewAnimatedChange(Context c,
-                                               final ImageView v, final Bitmap new_image) {
-        final Animation anim_out = AnimationUtils.loadAnimation(c,
-                android.R.anim.fade_out);
-        final Animation anim_in = AnimationUtils.loadAnimation(c,
-                android.R.anim.fade_in);
-        anim_out.setAnimationListener(new Animation.AnimationListener() {
-            @Override
-            public void onAnimationStart(Animation animation) {
-            }
-
-            @Override
-            public void onAnimationRepeat(Animation animation) {
-            }
-
-            @Override
-            public void onAnimationEnd(Animation animation) {
-                v.setImageBitmap(new_image);
-                anim_in.setAnimationListener(new Animation.AnimationListener() {
-                    @Override
-                    public void onAnimationStart(Animation animation) {
-                    }
-
-                    @Override
-                    public void onAnimationRepeat(Animation animation) {
-                    }
-
-                    @Override
-                    public void onAnimationEnd(Animation animation) {
-                    }
-                });
-                v.startAnimation(anim_in);
-            }
-        });
-        v.startAnimation(anim_out);
-    }
-
 
     // Code that executes after a permission is granted
     @Override
@@ -610,32 +645,11 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     }
 
 
-    // Listener which cleans-up database entries older than 1 day
-    private void setupDBCleanupListener() {
-        long cutoff = new Date().getTime() - TimeUnit.MILLISECONDS.convert(1, TimeUnit.DAYS);
-        Query oldItems = ref.child(id(this)).orderByChild("timestamp").endAt(cutoff);
-        oldItems.addListenerForSingleValueEvent(new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                for (DataSnapshot itemSnapshot: snapshot.getChildren()) {
-                    itemSnapshot.getRef().removeValue();
-                }
-            }
-
-            @Override
-            public void onCancelled(@NonNull DatabaseError databaseError) {
-                throw databaseError.toException();
-            }
-        });
-    }
-
-
-
     /*
      AsyncTask that will complete the query to the AIDataService, remembering the result in Firebase
       */
 
-    private class QueryTask extends AsyncTask<AIRequest,Void,AIResponse> {
+    private class QueryTask extends AsyncTask <AIRequest, Void, AIResponse> {
 
         private RequestExtras extras;
 
@@ -650,7 +664,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             try {
                 return aiDataService.request(req, extras);
             } catch (AIServiceException e) {
-                Log.d("EXCEPTION: ", e.getMessage());
+                Log.d("EXCEPTION", e.getMessage());
             }
             return null;
         }
