@@ -20,6 +20,13 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/INDEX.LIST'
+        exclude 'META-INF/io.netty.versions.properties'
+
+    }
+    buildToolsVersion '28.0.2'
 }
 
 dependencies {
@@ -41,8 +48,16 @@ dependencies {
     implementation 'ai.api:sdk:2.0.7@aar'
     implementation 'ai.api:libai:1.6.12'
     // Arch
-    implementation "android.arch.core:runtime:1.1.1"
-    implementation "android.arch.core:common:1.1.1"
+    implementation 'android.arch.core:runtime:1.1.1'
+    implementation 'android.arch.core:common:1.1.1'
+    // Google Cloud TTS
+    implementation 'com.google.cloud:google-cloud-texttospeech:0.59.0-beta'
+    // gRPC Cloud
+    implementation 'io.grpc:grpc-netty:1.14.0'
+    implementation 'io.grpc:grpc-protobuf:1.14.0'
+    implementation 'io.grpc:grpc-stub:1.14.0'
+    implementation 'io.grpc:grpc-all:1.14.0'
+    implementation 'io.grpc:grpc-okhttp:1.14.0'
     // Test
     testImplementation 'junit:junit:4.12'
     androidTestImplementation 'com.android.support.test:runner:1.0.2'

@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="Gradle: io.grpc:grpc-testing:1.14.0@jar">
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/io.grpc/grpc-testing/1.14.0/6efe5a9d62e459416d5c53e087870b6f2e29f4c2/grpc-testing-1.14.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/io.grpc/grpc-testing/1.14.0/4fe6f573d50e34b9fc7d2a992b01be666291f6e1/grpc-testing-1.14.0-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

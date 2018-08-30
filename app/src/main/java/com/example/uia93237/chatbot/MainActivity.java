@@ -1,6 +1,7 @@
 package com.example.uia93237.chatbot;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
@@ -10,6 +11,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.location.Location;
+import android.media.MediaPlayer;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
@@ -22,6 +24,7 @@ import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Base64;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -40,14 +43,26 @@ import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
+import com.google.api.gax.core.FixedCredentialsProvider;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.cloud.texttospeech.v1.AudioConfig;
+import com.google.cloud.texttospeech.v1.AudioEncoding;
+import com.google.cloud.texttospeech.v1.SsmlVoiceGender;
+import com.google.cloud.texttospeech.v1.SynthesisInput;
+import com.google.cloud.texttospeech.v1.SynthesizeSpeechResponse;
+import com.google.cloud.texttospeech.v1.TextToSpeechClient;
+import com.google.cloud.texttospeech.v1.TextToSpeechSettings;
+import com.google.cloud.texttospeech.v1.VoiceSelectionParams;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.Query;
 import com.google.firebase.database.ValueEventListener;
+import com.google.protobuf.ByteString;
 
-
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Collections;
@@ -58,6 +73,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -75,7 +91,6 @@ import ai.api.model.AIRequest;
 import ai.api.model.AIResponse;
 
 
-
 public class MainActivity extends AppCompatActivity implements AIListener {
 
 
@@ -84,6 +99,8 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     private static final String PREF_UNIQUE_ID = "PREF_UNIQUE_ID";
 
     private final static String accessToken = "f71f8955cc7a4003995542bb46f4f9e4"; // Connecting to a specific Google Dialogflow Agent
+
+    private final static String jsonAccessFile = "Chatbot-a7303d69abea.json";
 
     private final static String[] permissions = new String[] {
             Manifest.permission.ACCESS_FINE_LOCATION,
@@ -100,8 +117,14 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     // Dialog which prompts for internet connection
     private Dialog dialog;
 
-    // TTS engine
+    // Default TTS engine
     private TextToSpeech tts;
+
+    // Cloud TTS engine
+    private TextToSpeechClient textToSpeechClient;
+    private VoiceSelectionParams voice;
+    private AudioConfig audioConfig;
+    private MediaPlayer mediaPlayer;
 
     // Firebase DB
     private DatabaseReference ref;
@@ -131,23 +154,32 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         super.onCreate(savedInstanceState);
 
-        // Request: Record Audio and Location Permission
-        checkPermissions();
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        executorService.submit(() -> {
+
+            // Set up location related instances
+            initLocationServices();
+
+            // Request: Record Audio and Location Permission
+            checkPermissions();
+
+            // Set up Cloud TTS
+            initCloudTTS();
+
+            // Set up Default TTS
+//            initTTS();
+
+
+        });
 
         // Set up Firebase
         initFirebase();
 
-        // Set up view elements
-        initUIElements();
-
-        // Set up TTS
-        initTTS();
-
-        // Set up location related instances
-        initLocationServices();
-
         // Set up Dialogflow service
         initDialogflowService();
+
+        // Set up view elements
+        initUIElements();
 
         // Set up UI listeners
         initUIListeners();
@@ -168,6 +200,10 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         super.onPause();
 
         stopLocationUpdates();
+
+        if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+            mediaPlayer.stop();
+        }
     }
 
     // Cleanup Resources
@@ -176,8 +212,16 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         super.onDestroy();
 
         aiService.stopListening();
-        tts.stop();
+
         adapter.stopListening();
+
+        textToSpeechClient.close();
+        textToSpeechClient.shutdown();
+//        tts.stop();
+//        tts.shutdown();
+
+        mediaPlayer.reset();
+        mediaPlayer.release();
     }
 
 
@@ -185,7 +229,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     Init methods
      */
 
-    public void initUIElements() {
+    private void initUIElements() {
 
         setContentView(R.layout.activity_main);
         editText = findViewById(R.id.editText);
@@ -194,7 +238,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         initFirebaseRecyclerAdapter();
     }
 
-    public void initDialogflowService() {
+    private void initDialogflowService() {
 
         // Set up Dialogflow
         final AIConfiguration config =
@@ -208,7 +252,52 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         aiDataService = new AIDataService(this, config);
     }
 
-    public void initUIListeners() {
+
+    @SuppressWarnings("Convert2MethodRef")
+    private void initCloudTTS() {
+
+        try {
+
+            InputStream stream = this.getAssets().open(jsonAccessFile);
+            GoogleCredentials credentials = GoogleCredentials.fromStream(stream);
+
+            TextToSpeechSettings textToSpeechSettings =
+                    TextToSpeechSettings.newBuilder()
+                            .setCredentialsProvider(FixedCredentialsProvider.create(credentials))
+                            .build();
+
+
+            textToSpeechClient = TextToSpeechClient.create(textToSpeechSettings);
+
+            // Select the language code ("en-US") and the ssml voice gender ("female")
+            voice = VoiceSelectionParams.newBuilder()
+                    .setLanguageCode("en-UK")
+                    .setSsmlGender(SsmlVoiceGender.FEMALE)
+                    .build();
+
+            // Select the type of audio file you want returned
+            audioConfig = AudioConfig.newBuilder()
+                    .setAudioEncoding(AudioEncoding.MP3)
+                    .build();
+
+
+            // Set up media player which shall play the byte file
+            mediaPlayer = new MediaPlayer();
+            mediaPlayer.setOnPreparedListener(mp -> mp.start());
+            mediaPlayer.setOnErrorListener((mp, what, extra) -> {
+                Log.e("PlayError", "what:" + what + " extra:" + extra);
+                return true;
+            });
+            mediaPlayer.setOnCompletionListener(mp -> mp.reset());
+
+        }
+        catch (IOException e) {
+            Log.e("IOEXCEPTION", e.getMessage());
+        }
+
+    }
+
+    private void initUIListeners() {
 
         RelativeLayout addBtn = findViewById(R.id.addBtn);
         addBtn.setOnClickListener(view -> {
@@ -264,7 +353,8 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         });
     }
 
-    public void initTTS() {
+    // TODO This is kept purely for reference purpose - The app should use either Default or Cloud TTS
+    private void initTTS() {
 
         tts = new TextToSpeech(this, (status) -> {
             if(status == TextToSpeech.SUCCESS) {
@@ -273,7 +363,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         });
     }
 
-    public void initLocationServices() {
+    private void initLocationServices() {
 
         // Set up location related instances
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
@@ -290,14 +380,14 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         };
     }
 
-    public void initFirebase() {
+    private void initFirebase() {
 
         ref = FirebaseDatabase.getInstance().getReference();
         ref.keepSynced(true);
         setupDBCleanupListener();
     }
 
-    public void initFirebaseRecyclerAdapter() {
+    private void initFirebaseRecyclerAdapter() {
 
         // Set up the adapter
         FirebaseRecyclerOptions<Message> options =
@@ -373,12 +463,42 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         String reply = response.getResult().getFulfillment().getSpeech();
 
-        // Use TTS service to render the text response in audio
-        tts.speak(prepareForTTS(reply), TextToSpeech.QUEUE_ADD, null, null);
+        // Perform the Cloud text-to-speech request on the text input with the selected voice parameters and audio type
+
+        SynthesisInput input = SynthesisInput.newBuilder()
+                .setText(prepareForTTS(reply))
+                .build();
+
+        SynthesizeSpeechResponse speechResp =
+                textToSpeechClient.synthesizeSpeech(input, voice, audioConfig);
+
+        // Get the audio contents from the response
+        ByteString audioContents = speechResp.getAudioContent();
+
+        playMp3(audioContents);
+
 
         // Set text bubble for the Bot chat participant
+
         Message chatMessageBot = new Message(reply, botName);
         ref.child(id(this)).push().setValue(chatMessageBot);
+
+
+    //      // Use TTS service to render the text response in audio
+    //      tts.speak(prepareForTTS(reply), TextToSpeech.QUEUE_ADD, null, null);
+
+    }
+
+    private void playMp3(ByteString mp3ByteString) {
+
+        String url = "data:audio/mp3;base64," + Base64.encodeToString(mp3ByteString.toByteArray(), Base64.DEFAULT);
+        try {
+            mediaPlayer.setDataSource(url);
+            mediaPlayer.prepareAsync();
+        }
+        catch(IOException e) {
+            Log.e("IOEXCEPTION", e.getMessage());
+        }
     }
 
     // Requests permissions if not already granted
@@ -403,12 +523,10 @@ public class MainActivity extends AppCompatActivity implements AIListener {
                 android.R.anim.fade_in);
         anim_out.setAnimationListener(new Animation.AnimationListener() {
             @Override
-            public void onAnimationStart(Animation animation) {
-            }
+            public void onAnimationStart(Animation animation) {}
 
             @Override
-            public void onAnimationRepeat(Animation animation) {
-            }
+            public void onAnimationRepeat(Animation animation) {}
 
             @Override
             public void onAnimationEnd(Animation animation) {
@@ -649,6 +767,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
      AsyncTask that will complete the query to the AIDataService, remembering the result in Firebase
       */
 
+    @SuppressLint("StaticFieldLeak")
     private class QueryTask extends AsyncTask <AIRequest, Void, AIResponse> {
 
         private RequestExtras extras;
