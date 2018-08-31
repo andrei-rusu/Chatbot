@@ -19,6 +19,7 @@ import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
+import android.support.v7.app.ActionBar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
@@ -33,6 +34,7 @@ import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
 
@@ -47,7 +49,6 @@ import com.google.api.gax.core.FixedCredentialsProvider;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.texttospeech.v1.AudioConfig;
 import com.google.cloud.texttospeech.v1.AudioEncoding;
-import com.google.cloud.texttospeech.v1.SsmlVoiceGender;
 import com.google.cloud.texttospeech.v1.SynthesisInput;
 import com.google.cloud.texttospeech.v1.SynthesizeSpeechResponse;
 import com.google.cloud.texttospeech.v1.TextToSpeechClient;
@@ -72,6 +73,7 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -154,35 +156,29 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         super.onCreate(savedInstanceState);
 
-        ExecutorService executorService = Executors.newFixedThreadPool(2);
-        executorService.submit(() -> {
+        // Set up view elements
+        initUIElements();
 
-            // Set up location related instances
-            initLocationServices();
+        // Request: Record Audio and Location Permission
+        checkPermissions();
 
-            // Request: Record Audio and Location Permission
-            checkPermissions();
-
-            // Set up Cloud TTS
-            initCloudTTS();
-
-            // Set up Default TTS
-//            initTTS();
-
-
-        });
-
-        // Set up Firebase
-        initFirebase();
+        // Set up location related instances
+        initLocationServices();
 
         // Set up Dialogflow service
         initDialogflowService();
 
-        // Set up view elements
-        initUIElements();
+        // Set up Firebase
+        initFirebase();
+
+        //Configure FirebaseRecyclerAdapter -> FirebaseUI
+        initFirebaseRecyclerAdapter();
 
         // Set up UI listeners
         initUIListeners();
+
+        // Set up Cloud TTS
+        initCloudTTS();
 
     }
 
@@ -229,13 +225,19 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     Init methods
      */
 
+
     private void initUIElements() {
 
         setContentView(R.layout.activity_main);
+
+        ActionBar bar = getSupportActionBar();
+        if (bar != null) {
+            bar.setDisplayShowHomeEnabled(true);
+            bar.setLogo(R.mipmap.ic_launcher);
+            bar.setDisplayUseLogoEnabled(true);
+        }
         editText = findViewById(R.id.editText);
 
-        //Configure FirebaseRecyclerAdapter -> FirebaseUI
-        initFirebaseRecyclerAdapter();
     }
 
     private void initDialogflowService() {
@@ -269,10 +271,12 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
             textToSpeechClient = TextToSpeechClient.create(textToSpeechSettings);
 
-            // Select the language code ("en-US") and the ssml voice gender ("female")
+
+            // Select the language code and name - List can be found here: https://cloud.google.com/text-to-speech/docs/voices
+            String langCode = "en-AU";
             voice = VoiceSelectionParams.newBuilder()
-                    .setLanguageCode("en-UK")
-                    .setSsmlGender(SsmlVoiceGender.FEMALE)
+                    .setLanguageCode(langCode)
+                    .setName(langCode + "-Standard-C")
                     .build();
 
             // Select the type of audio file you want returned
