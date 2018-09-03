@@ -5,6 +5,7 @@ import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -28,6 +29,9 @@ import android.text.TextWatcher;
 import android.util.Base64;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.Animation;
@@ -118,6 +122,9 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
     // Dialog which prompts for internet connection
     private Dialog dialog;
+
+    // Boolean which determines whether TTS is being used
+    private boolean isUseTTS = true;
 
     // Default TTS engine
     private TextToSpeech tts;
@@ -219,6 +226,40 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         mediaPlayer.reset();
         mediaPlayer.release();
     }
+
+
+    /*
+    Activity methods regarding Menu Options
+     */
+
+    @Override
+    public boolean onPrepareOptionsMenu(Menu menu) {
+        MenuItem checkable = menu.findItem(R.id.action_tts);
+        checkable.setChecked(isUseTTS);
+        return true;
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.menu_main, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+            case R.id.action_tts:
+                flipUseTTS(item);
+                break;
+            case R.id.action_exit:
+                triggerAppExit();
+                break;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
 
 
     /*
@@ -353,6 +394,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         });
     }
 
+
     // TODO This is kept purely for reference purpose - The app should use either Default or Cloud TTS
     private void initTTS() {
 
@@ -463,29 +505,41 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         String reply = response.getResult().getFulfillment().getSpeech();
 
-        // Perform the Cloud text-to-speech request on the text input with the selected voice parameters and audio type
+        if (isUseTTS) {
 
-        SynthesisInput input = SynthesisInput.newBuilder()
-                .setText(prepareForTTS(reply))
-                .build();
+            // Perform the Cloud text-to-speech request on the text input with the selected voice parameters and audio type
 
-        SynthesizeSpeechResponse speechResp =
-                textToSpeechClient.synthesizeSpeech(input, voice, audioConfig);
+            SynthesisInput input = SynthesisInput.newBuilder()
+                    .setText(prepareForTTS(reply))
+                    .build();
 
-        // Get the audio contents from the response
-        ByteString audioContents = speechResp.getAudioContent();
+            SynthesizeSpeechResponse speechResp =
+                    textToSpeechClient.synthesizeSpeech(input, voice, audioConfig);
 
-        playMp3(audioContents);
+            // Get the audio contents from the response
+            ByteString audioContents = speechResp.getAudioContent();
+
+            playMp3(audioContents);
 
 
-        // Set text bubble for the Bot chat participant
+            //      // Use Default TTS service to render the text response in audio
+            //      tts.speak(prepareForTTS(reply), TextToSpeech.QUEUE_ADD, null, null);
+
+        }
+
+        /*
+        Set text bubble for the Bot chat participant
+
+        id(this) [= ID] -> returns a unique id for this app session on this phone (resets if app is reinstalled)
+        ref.child(ID) [= Reference] -> gets a Reference to the DB location at the relative path named as "ID"
+                                       Effectively: the current chat instance
+        Reference.push() [= Child] -> creates a "child" node for Reference with a randomized name
+        Child.setValue(message) -> the node is bound to a Message object
+                                   Effectively: the node becomes a holder for a specific message (in this case from the Bot)
+         */
 
         Message chatMessageBot = new Message(reply, botName);
         ref.child(id(this)).push().setValue(chatMessageBot);
-
-
-    //      // Use TTS service to render the text response in audio
-    //      tts.speak(prepareForTTS(reply), TextToSpeech.QUEUE_ADD, null, null);
 
     }
 
@@ -500,6 +554,12 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         catch(IOException e) {
             Log.e("IOEXCEPTION", e.getMessage());
         }
+    }
+
+    private void flipUseTTS(MenuItem item) {
+
+        isUseTTS ^= true;
+        item.setChecked(isUseTTS);
     }
 
     // Requests permissions if not already granted
@@ -629,6 +689,19 @@ public class MainActivity extends AppCompatActivity implements AIListener {
                 throw databaseError.toException();
             }
         });
+    }
+
+
+    private void triggerAppExit() {
+        new AlertDialog.Builder(this).setIcon(android.R.drawable.ic_dialog_alert).setTitle("Exit")
+                .setMessage("Are you sure?")
+                .setPositiveButton("Yes", (dialog, which) -> {
+                    Intent intent = new Intent(Intent.ACTION_MAIN);
+                    intent.addCategory(Intent.CATEGORY_HOME);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                    finish();
+                }).setNegativeButton("No", null).show();
     }
 
 
