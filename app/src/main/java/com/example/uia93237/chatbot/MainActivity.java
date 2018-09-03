@@ -236,6 +236,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             bar.setLogo(R.mipmap.ic_launcher);
             bar.setDisplayUseLogoEnabled(true);
         }
+
         editText = findViewById(R.id.editText);
 
     }
@@ -288,11 +289,6 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             // Set up media player which shall play the byte file
             mediaPlayer = new MediaPlayer();
             mediaPlayer.setOnPreparedListener(mp -> mp.start());
-            mediaPlayer.setOnErrorListener((mp, what, extra) -> {
-                Log.e("PlayError", "what:" + what + " extra:" + extra);
-                return true;
-            });
-            mediaPlayer.setOnCompletionListener(mp -> mp.reset());
 
         }
         catch (IOException e) {
@@ -497,6 +493,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         String url = "data:audio/mp3;base64," + Base64.encodeToString(mp3ByteString.toByteArray(), Base64.DEFAULT);
         try {
+            mediaPlayer.reset();
             mediaPlayer.setDataSource(url);
             mediaPlayer.prepareAsync();
         }
