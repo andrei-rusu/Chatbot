@@ -4,10 +4,11 @@ android {
     compileSdkVersion 28
     defaultConfig {
         applicationId "com.example.uia93237.chatbot"
-        minSdkVersion 21
+        minSdkVersion 17    // 16 has some UI rendering problems
         targetSdkVersion 28
         versionCode 1
         versionName "1.0"
+        multiDexEnabled true
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
@@ -29,41 +30,34 @@ android {
     buildToolsVersion '28.0.2'
 }
 
-configurations.all {
-    resolutionStrategy.eachDependency { DependencyResolveDetails details ->
-        def requested = details.requested
-        if (requested.group == "com.android.support") {
-            if (!requested.name.startsWith("multidex")) {
-                details.useVersion "26.+"
-            }
-        }
-    }
-}
-
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     // Core
-    implementation 'com.android.support:appcompat-v7:28.0.0-rc01'
-    implementation 'com.android.support:design:28.0.0-rc01'
-    implementation 'com.android.support:support-media-compat:28.0.0-rc01'
-    implementation 'com.android.support:support-v4:28.0.0-rc01'
-    implementation 'com.android.support.constraint:constraint-layout:1.1.2'
+    implementation 'com.android.support:appcompat-v7:28.0.0-rc02'
+    implementation 'com.android.support:support-media-compat:28.0.0-rc02'
+    implementation 'com.android.support:support-v4:28.0.0-rc02'
+    implementation 'com.android.support:recyclerview-v7:28.0.0-rc02'
+    implementation 'com.android.support.constraint:constraint-layout:1.1.3'
     // Google Play Services
     implementation 'com.google.android.gms:play-services-location:15.0.1'
     // Firebase
-    implementation 'com.google.firebase:firebase-core:16.0.1'
+    implementation 'com.google.firebase:firebase-core:16.0.3'
     implementation 'com.google.firebase:firebase-database:16.0.1'
     // Firebase UI
     implementation 'com.firebaseui:firebase-ui-database:4.1.0'
     // Dialogflow
     implementation 'ai.api:sdk:2.0.7@aar'
     implementation 'ai.api:libai:1.6.12'
+    // Remove Emojis for Android API < 24 (Non-Google) - MIT license
+    implementation 'com.vdurmont:emoji-java:4.0.0'
+    // Stream support for Android API < 24 (Non-Google) - GNU General Public License, version 2, with the Classpath Exception
+    implementation 'net.sourceforge.streamsupport:streamsupport:1.6.3'
     // Arch
     implementation 'android.arch.core:runtime:1.1.1'
     implementation 'android.arch.core:common:1.1.1'
     // Google Cloud TTS
     implementation 'com.google.cloud:google-cloud-texttospeech:0.59.0-beta'
-    // gRPC Cloud
+    // gRPC Google Cloud
     implementation 'io.grpc:grpc-netty:1.14.0'
     implementation 'io.grpc:grpc-protobuf:1.14.0'
     implementation 'io.grpc:grpc-stub:1.14.0'

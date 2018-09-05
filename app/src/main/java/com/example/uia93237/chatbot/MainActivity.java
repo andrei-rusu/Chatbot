@@ -13,7 +13,6 @@ import android.graphics.BitmapFactory;
 import android.location.Location;
 import android.media.MediaPlayer;
 import android.os.AsyncTask;
-import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
@@ -63,15 +62,16 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.Query;
 import com.google.firebase.database.ValueEventListener;
 import com.google.protobuf.ByteString;
+import com.vdurmont.emoji.EmojiParser;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -92,6 +92,8 @@ import ai.api.model.AIError;
 import ai.api.model.AIRequest;
 import ai.api.model.AIResponse;
 
+import java8.util.stream.StreamSupport;
+
 
 public class MainActivity extends AppCompatActivity implements AIListener {
 
@@ -100,27 +102,34 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     private static String uniqueID = null;
     private static final String PREF_UNIQUE_ID = "PREF_UNIQUE_ID";
 
-    private final static String accessToken = "f71f8955cc7a4003995542bb46f4f9e4"; // Connecting to a specific Google Dialogflow Agent
-
-    private final static String jsonAccessFile = "Chatbot-a7303d69abea.json";
-
-    private final static String[] permissions = new String[] {
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.RECORD_AUDIO
-    };
+    // Used for connecting to a specific Google Dialogflow Agent
+    private final static String accessToken = "f71f8955cc7a4003995542bb46f4f9e4";
 
     private final static String botName = "Agnes";
     private final static String userName = "User";
 
+    // Used for connecting to various Google Cloud Services - OAuth credentials
+    private final static String jsonAccessFile = "Chatbot-a7303d69abea.json";
+
+    // Permissions which are requested by the app
+    private final static String[] permissions = new String[] {
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.RECORD_AUDIO
+    };
     private final static int PERMISSION_CODE = 1;
 
+
+    // Text field used for sending messages to Dialogflow
     private EditText editText;
 
     // Dialog which prompts for internet connection
     private Dialog dialog;
 
     // Boolean which determines whether TTS is being used
-    private boolean isUseTTS = true;
+    private boolean isUseTTS;
+
+    // Boolean used to switch between the 2 pictograms (send and mic) in the fab button
+    private boolean flagFab = true;
 
     // Default TTS engine
     private TextToSpeech tts;
@@ -146,8 +155,6 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     private LocationCallback mLocationCallback;
     private Map<String, String> locationMap;
 
-    // boolean used to switch between the 2 pictograms in the fab button
-    private boolean flagFab = true;
 
 
     /*
@@ -180,6 +187,9 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         // Set up UI listeners
         initUIListeners();
 
+        // Set up Default TTS
+        initTTS();
+
         // Set up Cloud TTS
         initCloudTTS();
 
@@ -205,7 +215,6 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         }
     }
 
-    // Cleanup Resources
     @Override
     public void onDestroy() {
         super.onDestroy();
@@ -216,12 +225,14 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         textToSpeechClient.close();
         textToSpeechClient.shutdown();
-//        tts.stop();
-//        tts.shutdown();
+
+        tts.stop();
+        tts.shutdown();
 
         mediaPlayer.reset();
         mediaPlayer.release();
     }
+
 
 
     /*
@@ -329,7 +340,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         }
         catch (IOException e) {
-            Log.e("IOEXCEPTION", e.getMessage());
+            Log.e("TTSException", e.getMessage());
         }
 
     }
@@ -391,7 +402,6 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     }
 
 
-    // TODO This is kept purely for reference purpose - The app should use either Default or Cloud TTS
     private void initTTS() {
 
         tts = new TextToSpeech(this, (status) -> {
@@ -503,23 +513,32 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         if (isUseTTS) {
 
-            // Perform the Cloud text-to-speech request on the text input with the selected voice parameters and audio type
+            if (android.os.Build.VERSION.SDK_INT >= 21) {
 
-            SynthesisInput input = SynthesisInput.newBuilder()
-                    .setText(prepareForTTS(reply))
-                    .build();
+                // Perform the Cloud text-to-speech request on the text input with the selected voice parameters and audio type
 
-            SynthesizeSpeechResponse speechResp =
-                    textToSpeechClient.synthesizeSpeech(input, voice, audioConfig);
+                SynthesisInput input = SynthesisInput.newBuilder()
+                        .setText(prepareForTTS(reply))
+                        .build();
 
-            // Get the audio contents from the response
-            ByteString audioContents = speechResp.getAudioContent();
+                SynthesizeSpeechResponse speechResp =
+                        textToSpeechClient.synthesizeSpeech(input, voice, audioConfig);
 
-            playMp3(audioContents);
+                // Get the audio contents from the response
+                ByteString audioContents = speechResp.getAudioContent();
+
+                playMp3(audioContents);
 
 
-            //      // Use Default TTS service to render the text response in audio
-            //      tts.speak(prepareForTTS(reply), TextToSpeech.QUEUE_ADD, null, null);
+//                // Use Default TTS service
+//                tts.speak(prepareForTTS(reply), TextToSpeech.QUEUE_ADD, null, null); // API >= 21
+
+            }
+            else {
+                // Use Default TTS service to render the text response in audio
+                tts.speak(prepareForTTS(reply), TextToSpeech.QUEUE_ADD, null);
+
+            }
 
         }
 
@@ -548,7 +567,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             mediaPlayer.prepareAsync();
         }
         catch(IOException e) {
-            Log.e("IOEXCEPTION", e.getMessage());
+            Log.e("MediaPlayerException", e.getMessage());
         }
     }
 
@@ -561,50 +580,15 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     // Requests permissions if not already granted
     private void checkPermissions() {
 
-        for (String perm : permissions) {
+        String[] toRequest =
+                StreamSupport
+                        .stream(Arrays.asList(permissions))
+                        .filter(perm -> checkCallingOrSelfPermission(perm) != PackageManager.PERMISSION_GRANTED)
+                        .toArray(String[]::new);
 
-            int grant = this.checkCallingOrSelfPermission(perm);
-            if (! (grant == PackageManager.PERMISSION_GRANTED)) {
-                ActivityCompat.requestPermissions(this, new String[]{perm}, PERMISSION_CODE);
-            }
+        if (toRequest.length != 0) {
+            ActivityCompat.requestPermissions(this, toRequest, PERMISSION_CODE);
         }
-
-    }
-
-    // Method used to change the fab button pictograms with animation
-    private static void imageViewAnimatedChange(Context c,
-                                                final ImageView v, final Bitmap new_image) {
-        final Animation anim_out = AnimationUtils.loadAnimation(c,
-                android.R.anim.fade_out);
-        final Animation anim_in = AnimationUtils.loadAnimation(c,
-                android.R.anim.fade_in);
-        anim_out.setAnimationListener(new Animation.AnimationListener() {
-            @Override
-            public void onAnimationStart(Animation animation) {}
-
-            @Override
-            public void onAnimationRepeat(Animation animation) {}
-
-            @Override
-            public void onAnimationEnd(Animation animation) {
-                v.setImageBitmap(new_image);
-                anim_in.setAnimationListener(new Animation.AnimationListener() {
-                    @Override
-                    public void onAnimationStart(Animation animation) {
-                    }
-
-                    @Override
-                    public void onAnimationRepeat(Animation animation) {
-                    }
-
-                    @Override
-                    public void onAnimationEnd(Animation animation) {
-                    }
-                });
-                v.startAnimation(anim_in);
-            }
-        });
-        v.startAnimation(anim_out);
     }
 
     // Shows required connection dialog if the internet is unavailable
@@ -692,7 +676,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         new AlertDialog.Builder(this).setIcon(android.R.drawable.ic_dialog_alert).setTitle("Exit")
                 .setMessage("Are you sure?")
                 .setPositiveButton("Yes", (dialog, which) -> {
-                    finishAndRemoveTask();
+                    finish();
                     System.exit(0);
                 }).setNegativeButton("No", null).show();
     }
@@ -702,32 +686,10 @@ public class MainActivity extends AppCompatActivity implements AIListener {
     Static utility methods
      */
 
-    // make string ready for TTS by removing emojis
+    // Prepare the TTS input by returning only the first line of the reply, removing all Emojis in the process
     private static String prepareForTTS(String s) {
 
-        // TTS will only encode the first line of input
-        s = s.split("\\r?\\n")[0];
-
-        //Character.UnicodeScript.of () was not added till API 24 so this is a 24 up solution
-        if (Build.VERSION.SDK_INT > 23) {
-            // this is where we will store the reassembled string
-            StringBuilder result = new StringBuilder();
-            /*
-            we are going to cycle through the word checking each character
-            to find its unicode script to compare it against known alphabets
-              */
-            for (int i = 0; i < s.length(); i++) {
-                // currently emojis don't have a devoted unicode script so they return UNKNOWN
-                if (!Character.UnicodeScript.of(s.charAt(i)).toString().equals("UNKNOWN")) {
-                    result.append(s.charAt(i));
-                }
-            }
-
-            return result.toString();
-        }
-
-        // if API <= 23 emojis cannot be removed from the string
-        return s;
+        return EmojiParser.removeAllEmojis(s.split("\\r?\\n")[0]);
     }
 
 
@@ -746,6 +708,43 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             }
         }
         return uniqueID;
+    }
+
+
+    // Method used to change the fab button pictograms with animation
+    private static void imageViewAnimatedChange(Context c, final ImageView v, final Bitmap new_image) {
+
+        final Animation anim_out = AnimationUtils.loadAnimation(c,
+                android.R.anim.fade_out);
+        final Animation anim_in = AnimationUtils.loadAnimation(c,
+                android.R.anim.fade_in);
+        anim_out.setAnimationListener(new Animation.AnimationListener() {
+            @Override
+            public void onAnimationStart(Animation animation) {}
+
+            @Override
+            public void onAnimationRepeat(Animation animation) {}
+
+            @Override
+            public void onAnimationEnd(Animation animation) {
+                v.setImageBitmap(new_image);
+                anim_in.setAnimationListener(new Animation.AnimationListener() {
+                    @Override
+                    public void onAnimationStart(Animation animation) {
+                    }
+
+                    @Override
+                    public void onAnimationRepeat(Animation animation) {
+                    }
+
+                    @Override
+                    public void onAnimationEnd(Animation animation) {
+                    }
+                });
+                v.startAnimation(anim_in);
+            }
+        });
+        v.startAnimation(anim_out);
     }
 
 
@@ -810,18 +809,18 @@ public class MainActivity extends AppCompatActivity implements AIListener {
                 switch(permission) {
                     case Manifest.permission.ACCESS_FINE_LOCATION:
                         if (grantResults[i] == PackageManager.PERMISSION_GRANTED) {
-                            Toast.makeText(this,"GPS permission granted",Toast.LENGTH_LONG).show();
+                            Toast.makeText(this,"GPS permission granted", Toast.LENGTH_LONG).show();
                         }
                         else {
-                            Toast.makeText(this,"GPS permission denied",Toast.LENGTH_LONG).show();
+                            Toast.makeText(this,"GPS permission denied", Toast.LENGTH_LONG).show();
                         }
                         break;
                     case Manifest.permission.RECORD_AUDIO:
                         if (grantResult == PackageManager.PERMISSION_GRANTED) {
-                            Toast.makeText(this,"Audio recording permission granted",Toast.LENGTH_LONG).show();
+                            Toast.makeText(this,"Audio recording permission granted", Toast.LENGTH_LONG).show();
                         }
                         else {
-                            Toast.makeText(this,"Audio recording permission denied",Toast.LENGTH_LONG).show();
+                            Toast.makeText(this,"Audio recording permission denied", Toast.LENGTH_LONG).show();
                         }
                 }
             }
@@ -831,7 +830,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
 
     /*
-     AsyncTask that will complete the query to the AIDataService, remembering the result in Firebase
+     AsyncTask that will complete the query to the AIDataService, calling handleResponse() on the resulting AIResponse
       */
 
     @SuppressLint("StaticFieldLeak")
@@ -850,7 +849,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             try {
                 return aiDataService.request(req, extras);
             } catch (AIServiceException e) {
-                Log.d("EXCEPTION", e.getMessage());
+                Log.d("AIServiceException", e.getMessage());
             }
             return null;
         }

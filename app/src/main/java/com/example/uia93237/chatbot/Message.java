@@ -3,6 +3,7 @@ package com.example.uia93237.chatbot;
 import java.util.Date;
 
 
+@SuppressWarnings("unused")
 public class Message {
 
     /*
@@ -13,34 +14,45 @@ public class Message {
     private String msgUser;
     private long timestamp;
 
-    public Message(String msgText, String msgUser) {
-        this.msgText = msgText;
-        this.msgUser = msgUser;
+    // No-arg constructor needed for Firebase
+    public Message(){
+
         this.timestamp = new Date().getTime();
     }
 
-    // No-arg constructor needed for Firebase
-    public Message(){
+    Message(String msgText, String msgUser) {
+        this.msgText = msgText;
+        this.msgUser = msgUser;
         this.timestamp = new Date().getTime();
     }
 
     public String getMsgText() {
+
         return msgText;
     }
 
     public void setMsgText(String msgText) {
+
         this.msgText = msgText;
     }
 
     public String getMsgUser() {
+
         return msgUser;
     }
 
     public void setMsgUser(String msgUser) {
+
         this.msgUser = msgUser;
     }
 
-    public long getTimestamp() { return timestamp; }
+    public long getTimestamp() {
 
-    public void setTimestamp(long timestamp) { this.timestamp = timestamp; }
+        return timestamp;
+    }
+
+    public void setTimestamp(long timestamp) {
+
+        this.timestamp = timestamp;
+    }
 }
