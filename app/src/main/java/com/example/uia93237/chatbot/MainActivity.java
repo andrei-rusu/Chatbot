@@ -206,18 +206,18 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
     @Override
     protected void onPause() {
-        super.onPause();
 
         stopLocationUpdates();
 
         if (mediaPlayer != null && mediaPlayer.isPlaying()) {
             mediaPlayer.stop();
         }
+
+        super.onPause();
     }
 
     @Override
     public void onDestroy() {
-        super.onDestroy();
 
         aiService.stopListening();
 
@@ -231,6 +231,8 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
         mediaPlayer.reset();
         mediaPlayer.release();
+
+        super.onDestroy();
     }
 
 
@@ -437,7 +439,7 @@ public class MainActivity extends AppCompatActivity implements AIListener {
 
     private void initFirebaseRecyclerAdapter() {
 
-        // Set up the adapter
+        // Set up the Adapter
         FirebaseRecyclerOptions<Message> options =
                 new FirebaseRecyclerOptions.Builder<Message>()
                         .setQuery(ref.child(id(this)), Message.class)
@@ -474,9 +476,12 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             }
         };
 
+
         // Register the Adapter with the recyclerView
+
         RecyclerView recyclerView = findViewById(R.id.recyclerView);
         recyclerView.setHasFixedSize(true);
+
         final LinearLayoutManager linearLayoutManager = new LinearLayoutManager(this);
         linearLayoutManager.setStackFromEnd(true);
         recyclerView.setLayoutManager(linearLayoutManager);
@@ -495,8 +500,10 @@ public class MainActivity extends AppCompatActivity implements AIListener {
             }
         });
 
-        // Set the adapter for the recyclerView and start the events listening
         recyclerView.setAdapter(adapter);
+
+
+        // Start the events-listening routine of the Adapter
         adapter.startListening();
     }
 
