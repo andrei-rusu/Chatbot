@@ -297,11 +297,11 @@ public class MainActivity extends AppCompatActivity implements AIListener {
         final AIConfiguration config =
                 new AIConfiguration(accessToken, AIConfiguration.SupportedLanguages.English, AIConfiguration.RecognitionEngine.System);
 
-        // Used for voice search
+        // Used for voice request
         aiService = AIService.getService(this, config);
         aiService.setListener(this);
 
-        // Used for text search
+        // Used for text request
         aiDataService = new AIDataService(this, config);
     }
 
