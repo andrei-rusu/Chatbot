@@ -1,4 +1,4 @@
-# VoicR-Chatbot
+# Chatbot
 
 This is a sample Android chatbot that connects to the Google Cloud for NLU and Mobile BaaS services.
 
