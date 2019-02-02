@@ -7,7 +7,7 @@ It's current test name is Agnes Boston.
 === Credentials ===
 
 GMail: agnes.boston.ai@gmail.com
-Pass: chatbot121
+Pass: *************
 
 === Useful Links ===
 
