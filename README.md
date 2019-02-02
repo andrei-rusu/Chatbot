@@ -4,10 +4,6 @@ This is a sample Android chatbot that connects to the Google Cloud for NLU and M
 
 It's current test name is Agnes Boston.
 
-=== Credentials ===
-
-GMail: agnes.boston.ai@gmail.com
-Pass: *************
 
 === Useful Links ===
 
